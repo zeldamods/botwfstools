@@ -1,0 +1,3 @@
+include aamp/botw_hashed_names.txt
+include aamp/botw_numbered_names.txt
+include fastentrypoints.py
