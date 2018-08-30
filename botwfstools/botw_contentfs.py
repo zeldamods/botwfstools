@@ -117,11 +117,11 @@ class HostDirectory(Directory):
 
     def get_file_stats(self, path: PPPath) -> dict:
         if self._assume_constant and path in self._stat_result:
-            return self._stat_result[path]
+            return dict(self._stat_result[path])
         result = my_stat(os.lstat(self._path / path))
         if self._assume_constant:
             self._stat_result[path] = result
-        return result
+        return dict(result)
 
 class ArchiveDirectory(Directory):
     SELF_FILE_NAME = '.__RAW_ARCHIVE__'
