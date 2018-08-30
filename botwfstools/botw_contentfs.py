@@ -208,7 +208,6 @@ class BotWContent(Operations):
         self.work_dir = PPPath(work_dir) if work_dir else None
         self.sarcs: typing.Dict[str, sarc.SARC] = dict()
         self.fd_map: FdAllocator[File] = FdAllocator()
-        self.content_file_cache: typing.Dict[PPPath, typing.Any] = dict()
         self.fd_lock = threading.Lock()
 
     @functools.lru_cache(maxsize=50)
@@ -235,15 +234,13 @@ class BotWContent(Operations):
         parent = self._get_directory(base_path, path.parent, assume_constant)
         return parent.open_file(parent.get_path_relative_to_this(path), flags)
 
+    @functools.lru_cache(maxsize=256)
     def _get_directory_from_content(self, path: PPPath) -> Directory:
-        if path not in self.content_file_cache:
-            self.content_file_cache[path] = self._get_directory(self.content_dir, path, True)
-        return self.content_file_cache[path]
+        return self._get_directory(self.content_dir, path, True)
 
+    @functools.lru_cache(maxsize=256)
     def _get_file_from_content(self, path: PPPath, flags) -> File:
-        if path not in self.content_file_cache:
-            self.content_file_cache[path] = self._get_file(self.content_dir, path, flags, True)
-        return self.content_file_cache[path]
+        return self._get_file(self.content_dir, path, flags, True)
 
     def _get_parent_directory_from_partial(self, path: PPPath) -> Directory:
         if self.work_dir and os.path.exists(self.work_dir / path):
