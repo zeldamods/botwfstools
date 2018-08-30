@@ -154,7 +154,7 @@ class BotWMergedContent(Operations):
             f.truncate(length)
 
     def flush(self, path, fh):
-        return os.fsync(fh)
+        pass
 
     def release(self, path, fh):
         return os.close(fh)
