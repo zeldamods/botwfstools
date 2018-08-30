@@ -28,6 +28,7 @@ def is_archive_filename(path: PPPath) -> bool:
     return path.suffix[1:] in ARCHIVE_EXTS
 
 class File(metaclass=abc.ABCMeta):
+    __slots__ = ()
     @abc.abstractclassmethod
     def read(self, length: int) -> bytes:
         pass
@@ -42,6 +43,7 @@ class File(metaclass=abc.ABCMeta):
         pass
 
 class HostFile(File):
+    __slots__ = ('_fh')
     def __init__(self, fh) -> None:
         self._fh = fh
     def __del__(self) -> None:
@@ -56,6 +58,7 @@ class HostFile(File):
         return os.fstat(self._fh).st_size
 
 class InMemoryFile(File):
+    __slots__ = ('_data', '_position')
     def __init__(self, data: memoryview) -> None:
         self._data = data
         self._position = 0
@@ -75,6 +78,7 @@ class InMemoryFile(File):
         return len(self._data)
 
 class Directory(metaclass=abc.ABCMeta):
+    __slots__ = ('_path', '_base_path')
     def __init__(self, base_path: PPPath, path: PPPath) -> None:
         self._path = path
         self._base_path = base_path
@@ -105,6 +109,7 @@ def change_st_to_directory(st) -> None:
     st['st_size'] = 0
 
 class HostDirectory(Directory):
+    __slots__ = ('_assume_constant', '_stat_result')
     def __init__(self, base_path: PPPath, path: PPPath, assume_constant: bool) -> None:
         super().__init__(base_path, path)
         self._assume_constant = assume_constant
@@ -125,6 +130,7 @@ class HostDirectory(Directory):
         return dict(result)
 
 class ArchiveDirectory(Directory):
+    __slots__ = ('_arc', '_parent')
     SELF_FILE_NAME = '.__RAW_ARCHIVE__'
 
     def __init__(self, base_path: PPPath, path: PPPath, archive: sarc.SARC, parent: Directory) -> None:
