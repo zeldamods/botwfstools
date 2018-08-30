@@ -20,11 +20,16 @@ class BotWMergedContent(Operations):
     def __init__(self, content_dir: typing.List[str], work_dir: typing.Optional[str]) -> None:
         self.content_dir = content_dir
         self.work_dir = work_dir
+        self.path_cache: typing.Dict[str, str] = dict()
+        self.stat_cache: typing.Dict[str, dict] = dict()
+        self.readdir_cache: typing.Dict[str, set] = dict()
 
     def _real_path(self, partial: str) -> str:
         """Get a host FS path based on the content dir list and the work directory.
         File precedence: work_dir, content_dir[n-1], ..., content_dir[0]
         """
+        if not self.work_dir and partial in self.path_cache:
+            return self.path_cache[partial]
         if self.work_dir:
             path = self.work_dir + partial
             if os.path.exists(path):
@@ -32,6 +37,7 @@ class BotWMergedContent(Operations):
         for directory in reversed(self.content_dir):
             path = directory + partial
             if os.path.exists(path):
+                self.path_cache[partial] = path
                 return path
         raise FuseOSError(errno.ENOENT)
 
@@ -43,12 +49,16 @@ class BotWMergedContent(Operations):
             raise FuseOSError(errno.EACCES)
 
     def getattr(self, path, fh=None):
+        if not self.work_dir and path in self.stat_cache:
+            return self.stat_cache[path]
         real_path = self._real_path(path)
         st = os.lstat(real_path)
         d = dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
                  'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
         if os.name != 'nt':
             d['st_blocks'] = st.st_blocks
+        if not self.work_dir:
+            self.stat_cache[path] = d
         return d
 
     def readdir(self, path, fh) -> typing.Iterator[str]:
@@ -59,10 +69,17 @@ class BotWMergedContent(Operations):
             if os.path.isdir(real_path):
                 entries.update(os.listdir(real_path))
 
-        for directory in reversed(self.content_dir):
-            real_path = directory + path
-            if os.path.isdir(real_path):
-                entries.update(os.listdir(real_path))
+        if path in self.readdir_cache:
+            entries.update(self.readdir_cache[path])
+        else:
+            cache_entries = set()
+            for directory in reversed(self.content_dir):
+                real_path = directory + path
+                if os.path.isdir(real_path):
+                    l = os.listdir(real_path)
+                    entries.update(l)
+                    cache_entries.update(l)
+            self.readdir_cache[path] = cache_entries
 
         for r in entries:
             yield r

@@ -104,12 +104,24 @@ def change_st_to_directory(st) -> None:
     st['st_size'] = 0
 
 class HostDirectory(Directory):
+    def __init__(self, base_path: PPPath, path: PPPath, assume_constant: bool) -> None:
+        super().__init__(base_path, path)
+        self._assume_constant = assume_constant
+        self._stat_result: typing.Dict[PPPath, dict] = dict()
+
     def list_files(self, path: PPPath) -> typing.Collection[str]:
         return os.listdir(self._path / path)
+
     def open_file(self, file: PPPath, flags) -> File:
         return HostFile(os.open(self._path / file, flags | BINARY_MODE))
+
     def get_file_stats(self, path: PPPath) -> dict:
-        return my_stat(os.lstat(self._path / path))
+        if self._assume_constant and path in self._stat_result:
+            return self._stat_result[path]
+        result = my_stat(os.lstat(self._path / path))
+        if self._assume_constant:
+            self._stat_result[path] = result
+        return result
 
 class ArchiveDirectory(Directory):
     SELF_FILE_NAME = '.__RAW_ARCHIVE__'
@@ -194,10 +206,11 @@ class BotWContent(Operations):
         self.work_dir = PPPath(work_dir) if work_dir else None
         self.sarcs: typing.Dict[str, sarc.SARC] = dict()
         self.fd_map: FdAllocator[File] = FdAllocator()
+        self.content_file_cache: typing.Dict[PPPath, typing.Any] = dict()
 
     @functools.lru_cache(maxsize=50)
-    def _get_sarc(self, base_path: PPPath, path: PPPath) -> typing.Tuple[Directory, sarc.SARC]:
-        parent = self._get_directory(base_path, path.parent)
+    def _get_sarc(self, base_path: PPPath, path: PPPath, assume_constant: bool) -> typing.Tuple[Directory, sarc.SARC]:
+        parent = self._get_directory(base_path, path.parent, assume_constant)
         archive_file = parent.open_file(parent.get_path_relative_to_this(path), os.O_RDONLY)
         archive = sarc.read_file_and_make_sarc(
             io.BytesIO(archive_file.read(archive_file.get_size())))
@@ -205,29 +218,39 @@ class BotWContent(Operations):
             return (parent, archive)
         raise FuseOSError(errno.ENOENT)
 
-    def _get_directory(self, base_path: PPPath, path: PPPath) -> Directory:
+    def _get_directory(self, base_path: PPPath, path: PPPath, assume_constant: bool) -> Directory:
         while True:
             full_path = base_path / path
             if os.path.isdir(full_path):
-                return HostDirectory(base_path, full_path)
+                return HostDirectory(base_path, full_path, assume_constant)
             if is_archive_filename(full_path) and not os.path.isdir(full_path):
-                directory, archive = self._get_sarc(base_path, path)
+                directory, archive = self._get_sarc(base_path, path, assume_constant)
                 return ArchiveDirectory(base_path, full_path, archive, directory)
             path = path.parent
 
-    def _get_file(self, base_path: PPPath, path: PPPath, flags) -> File:
-        parent = self._get_directory(base_path, path.parent)
+    def _get_file(self, base_path: PPPath, path: PPPath, flags, assume_constant: bool) -> File:
+        parent = self._get_directory(base_path, path.parent, assume_constant)
         return parent.open_file(parent.get_path_relative_to_this(path), flags)
+
+    def _get_directory_from_content(self, path: PPPath) -> Directory:
+        if path not in self.content_file_cache:
+            self.content_file_cache[path] = self._get_directory(self.content_dir, path, True)
+        return self.content_file_cache[path]
+
+    def _get_file_from_content(self, path: PPPath, flags) -> File:
+        if path not in self.content_file_cache:
+            self.content_file_cache[path] = self._get_file(self.content_dir, path, flags, True)
+        return self.content_file_cache[path]
 
     def _get_parent_directory_from_partial(self, path: PPPath) -> Directory:
         if self.work_dir and os.path.exists(self.work_dir / path):
-            return self._get_directory(self.work_dir, path.parent)
-        return self._get_directory(self.content_dir, path.parent)
+            return self._get_directory(self.work_dir, path.parent, assume_constant=False)
+        return self._get_directory_from_content(path.parent)
 
     def _get_file_from_partial(self, path: PPPath, flags) -> File:
         if self.work_dir and os.path.isfile(self.work_dir / path):
-            return self._get_file(self.work_dir, path, flags)
-        return self._get_file(self.content_dir, path, flags)
+            return self._get_file(self.work_dir, path, flags, assume_constant=False)
+        return self._get_file_from_content(path, flags)
 
     def _path(self, partial: str) -> PPPath:
         return PPPath(partial[1:] if partial[0] == '/' else partial)
@@ -254,7 +277,7 @@ class BotWContent(Operations):
 
         try:
             _path = self._path(partial)
-            directory = self._get_directory(self.content_dir, _path)
+            directory = self._get_directory_from_content(_path)
             entries.update(directory.list_files(directory.get_path_relative_to_this(_path)))
         except FuseOSError:
             pass
@@ -312,7 +335,7 @@ class BotWContent(Operations):
             if not os.path.exists(self.work_dir / _path):
                 os.makedirs(self.work_dir / _path.parent, exist_ok=True)
                 with open(self.work_dir / _path, 'wb') as target:
-                    file = self._get_file(self.content_dir, _path, os.O_RDONLY)
+                    file = self._get_file_from_content(_path, os.O_RDONLY)
                     target.write(file.read(file.get_size())) # type: ignore
             return self.fd_map.allocate(HostFile(os.open(self.work_dir / _path, flags | BINARY_MODE)))
         return self.fd_map.allocate(self._get_file_from_partial(_path, os.O_RDONLY))
