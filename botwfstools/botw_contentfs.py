@@ -13,6 +13,7 @@ import sarc
 import shutil
 import stat
 import sys
+import threading
 import typing
 
 from fuse import FUSE, FuseOSError, Operations # type: ignore
@@ -208,6 +209,7 @@ class BotWContent(Operations):
         self.sarcs: typing.Dict[str, sarc.SARC] = dict()
         self.fd_map: FdAllocator[File] = FdAllocator()
         self.content_file_cache: typing.Dict[PPPath, typing.Any] = dict()
+        self.fd_lock = threading.Lock()
 
     @functools.lru_cache(maxsize=50)
     def _get_sarc(self, base_path: PPPath, path: PPPath, assume_constant: bool) -> typing.Tuple[Directory, sarc.SARC]:
@@ -329,35 +331,39 @@ class BotWContent(Operations):
         pass
 
     def open(self, partial: str, flags) -> int:
-        _path = self._path(partial)
-        if (flags & os.O_WRONLY or flags & os.O_RDWR):
-            if not self.work_dir:
-                raise FuseOSError(errno.EROFS)
-            if not os.path.exists(self.work_dir / _path):
-                os.makedirs(self.work_dir / _path.parent, exist_ok=True)
-                with open(self.work_dir / _path, 'wb') as target:
-                    file = self._get_file_from_content(_path, os.O_RDONLY)
-                    target.write(file.read(file.get_size())) # type: ignore
-            return self.fd_map.allocate(HostFile(os.open(self.work_dir / _path, flags | BINARY_MODE)))
-        return self.fd_map.allocate(self._get_file_from_partial(_path, os.O_RDONLY))
+        with self.fd_lock:
+            _path = self._path(partial)
+            if (flags & os.O_WRONLY or flags & os.O_RDWR):
+                if not self.work_dir:
+                    raise FuseOSError(errno.EROFS)
+                if not os.path.exists(self.work_dir / _path):
+                    os.makedirs(self.work_dir / _path.parent, exist_ok=True)
+                    with open(self.work_dir / _path, 'wb') as target:
+                        file = self._get_file_from_content(_path, os.O_RDONLY)
+                        target.write(file.read(file.get_size())) # type: ignore
+                return self.fd_map.allocate(HostFile(os.open(self.work_dir / _path, flags | BINARY_MODE)))
+            return self.fd_map.allocate(self._get_file_from_partial(_path, os.O_RDONLY))
 
     def create(self, partial: str, mode, fi=None):
         if not self.work_dir:
             raise FuseOSError(errno.EROFS)
-        # TODO: error if the parent dir does not exist
-        os.makedirs(self.work_dir / self._path(partial).parent, exist_ok=True)
-        return self.fd_map.allocate(
-            HostFile(os.open(self.work_dir / self._path(partial), os.O_RDWR | os.O_CREAT | BINARY_MODE, mode)))
+        with self.fd_lock:
+            # TODO: error if the parent dir does not exist
+            os.makedirs(self.work_dir / self._path(partial).parent, exist_ok=True)
+            return self.fd_map.allocate(
+                HostFile(os.open(self.work_dir / self._path(partial), os.O_RDWR | os.O_CREAT | BINARY_MODE, mode)))
 
     def read(self, partial: str, length, offset, fd: int):
-        file = self.fd_map.get_entry(fd)
-        file.seek(offset)
-        return file.read(length)
+        with self.fd_lock:
+            file = self.fd_map.get_entry(fd)
+            file.seek(offset)
+            return file.read(length)
 
     def write(self, partial: str, buf, offset, fd: int):
-        file = self.fd_map.get_entry(fd)
-        file.seek(offset)
-        return file.write(buf)
+        with self.fd_lock:
+            file = self.fd_map.get_entry(fd)
+            file.seek(offset)
+            return file.write(buf)
 
     def truncate(self, partial: str, length, fh=None):
         _path = self._path(partial)
@@ -370,7 +376,8 @@ class BotWContent(Operations):
         pass
 
     def release(self, path, fd: int):
-        self.fd_map.free(fd)
+        with self.fd_lock:
+            self.fd_map.free(fd)
 
     def fsync(self, path, fdatasync, fd: int):
         return self.flush(path, fd)
@@ -396,9 +403,9 @@ def main(content_dir: str, target_dir: str, work_dir: typing.Optional[str]) -> N
         print('work: (none, read-only)')
 
     if os.name != 'nt':
-        FUSE(BotWContent(content_dir, work_dir), target_dir, nothreads=True, foreground=True)
+        FUSE(BotWContent(content_dir, work_dir), target_dir, foreground=True)
     else:
-        FUSE(BotWContent(content_dir, work_dir), target_dir, nothreads=True, foreground=True,
+        FUSE(BotWContent(content_dir, work_dir), target_dir, foreground=True,
              uid=65792, gid=65792, umask=0)
 
 def cli_main() -> None:
