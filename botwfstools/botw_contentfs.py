@@ -167,6 +167,7 @@ class ArchiveDirectory(Directory):
         for arc_file in self._arc.list_files():
             if arc_file == str(path) or arc_file == '/' + str(path):
                 arc_stat['st_mode'] &= ~stat.S_IFDIR
+                arc_stat['st_mode'] &= ~stat.S_IXUSR
                 arc_stat['st_mode'] |= stat.S_IFREG
                 arc_stat['st_mode'] |= stat.S_IRUSR | stat.S_IWUSR
                 arc_stat['st_size'] = self._arc.get_file_size(arc_file)
