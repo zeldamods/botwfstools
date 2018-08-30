@@ -38,6 +38,7 @@ def main(content_dir: typing.List[str], content_view: str, work_dir: str, patche
         # Mount overlayfs: content_dirs... -> merged_dir
         overlayfs_p1 = _spawn([sys.executable, os.path.join(this_dir, 'botw_overlayfs.py'),
                                *content_dir, temp_merged_dir])
+        print(temp_merged_dir)
         # Mount contentfs: merged_dir work_dir -> content_view (work: work_dir)
         contentfs_p = _spawn([sys.executable, os.path.join(this_dir, 'botw_contentfs.py'),
                               temp_merged_dir, content_view, '-w', work_dir])

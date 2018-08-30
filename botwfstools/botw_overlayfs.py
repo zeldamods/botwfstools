@@ -69,17 +69,11 @@ class BotWMergedContent(Operations):
             if os.path.isdir(real_path):
                 entries.update(os.listdir(real_path))
 
-        if path in self.readdir_cache:
-            entries.update(self.readdir_cache[path])
-        else:
-            cache_entries = set()
-            for directory in reversed(self.content_dir):
-                real_path = directory + path
-                if os.path.isdir(real_path):
-                    l = os.listdir(real_path)
-                    entries.update(l)
-                    cache_entries.update(l)
-            self.readdir_cache[path] = cache_entries
+        for directory in reversed(self.content_dir):
+            real_path = directory + path
+            if os.path.isdir(real_path):
+                l = os.listdir(real_path)
+                entries.update(l)
 
         for r in entries:
             yield r

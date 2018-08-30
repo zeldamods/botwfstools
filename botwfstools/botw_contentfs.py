@@ -384,6 +384,9 @@ def main(content_dir: str, target_dir: str, work_dir: typing.Optional[str]) -> N
     if work_dir:
         _exit_if_not_dir(work_dir)
 
+    content_dir = os.path.realpath(content_dir)
+    target_dir = os.path.realpath(target_dir)
+
     print('content: %s' % content_dir)
     print('target: %s' % target_dir)
     if work_dir:
