@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import sys
+import threading
 import typing
 
 from fuse import FUSE, FuseOSError, Operations # type: ignore
@@ -23,6 +24,7 @@ class BotWMergedContent(Operations):
         self.path_cache: typing.Dict[str, str] = dict()
         self.stat_cache: typing.Dict[str, dict] = dict()
         self.readdir_cache: typing.Dict[str, set] = dict()
+        self.open_lock = threading.Lock()
 
     def _real_path(self, partial: str) -> str:
         """Get a host FS path based on the content dir list and the work directory.
@@ -120,24 +122,26 @@ class BotWMergedContent(Operations):
         return os.utime(self._real_path(path), times)
 
     def open(self, path, flags):
-        real_path = self._real_path(path)
-        if (flags & os.O_WRONLY or flags & os.O_RDWR):
-            if not self.work_dir:
-                raise FuseOSError(errno.EROFS)
-            if not os.path.exists(self.work_dir + path):
-                os.makedirs(self.work_dir + str(Path(path).parent), exist_ok=True)
-                shutil.copyfile(real_path, self.work_dir + path)
+        with self.open_lock:
+            real_path = self._real_path(path)
+            if (flags & os.O_WRONLY or flags & os.O_RDWR):
+                if not self.work_dir:
+                    raise FuseOSError(errno.EROFS)
+                if not os.path.exists(self.work_dir + path):
+                    os.makedirs(self.work_dir + str(Path(path).parent), exist_ok=True)
+                    shutil.copyfile(real_path, self.work_dir + path)
 
-        return os.open(self._real_path(path), flags | BINARY_MODE)
+            return os.open(self._real_path(path), flags | BINARY_MODE)
 
     def create(self, path, mode, fi=None):
-        if not self.work_dir:
-            raise FuseOSError(errno.EROFS)
-        parent_dir = str(Path(path).parent)
-        # Check whether the parent path exists.
-        self._real_path(parent_dir)
-        os.makedirs(self.work_dir + parent_dir, exist_ok=True)
-        return os.open(self.work_dir + path, os.O_RDWR | os.O_CREAT | BINARY_MODE, mode)
+        with self.open_lock:
+            if not self.work_dir:
+                raise FuseOSError(errno.EROFS)
+            parent_dir = str(Path(path).parent)
+            # Check whether the parent path exists.
+            self._real_path(parent_dir)
+            os.makedirs(self.work_dir + parent_dir, exist_ok=True)
+            return os.open(self.work_dir + path, os.O_RDWR | os.O_CREAT | BINARY_MODE, mode)
 
     def read(self, path, length, offset, fh):
         os.lseek(fh, offset, os.SEEK_SET)
@@ -181,9 +185,9 @@ def main(content_dir: typing.List[str], target_dir: str, work_dir: typing.Option
     else:
         print('work: (none, read-only)')
     if os.name != 'nt':
-        FUSE(BotWMergedContent(content_dir, work_dir), target_dir, nothreads=True, foreground=True)
+        FUSE(BotWMergedContent(content_dir, work_dir), target_dir, foreground=True)
     else:
-        FUSE(BotWMergedContent(content_dir, work_dir), target_dir, nothreads=True, foreground=True,
+        FUSE(BotWMergedContent(content_dir, work_dir), target_dir, foreground=True,
              uid=65792, gid=65792, umask=0)
 
 def cli_main() -> None:
