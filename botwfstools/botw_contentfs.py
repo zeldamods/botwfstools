@@ -208,9 +208,69 @@ class FdAllocator(typing.Generic[T]):
     def get_entry(self, fd) -> T:
         return self._fd_map[fd]
 
+class ContentDirectory(Directory):
+    __slots__ = ('_content_device', '_rel_path')
+    def __init__(self, base_path: PPPath, path: PPPath, content_device) -> None:
+        super().__init__(base_path, path)
+        self._content_device = content_device
+        self._rel_path = path.relative_to(base_path)
+
+    def _do_list_files(self, path: PPPath) -> typing.Collection[str]:
+        entries = set()
+        for d in reversed(self._content_device.dirs):
+            try:
+                entries.update(os.listdir(d / self._rel_path / path))
+            except FileNotFoundError:
+                pass
+        return entries
+
+    @functools.lru_cache(maxsize=2**15)
+    def _find_parent(self, path: PPPath, existence_fn: typing.Callable[[PPPath], bool]) -> PPPath:
+        if str(path) == '.':
+            return self._content_device.dirs[-1]
+        for d in reversed(self._content_device.dirs):
+            try:
+                if existence_fn(d / path):
+                    return d
+            except FileNotFoundError:
+                pass
+        raise FuseOSError(errno.ENOENT)
+
+    def list_files(self, path):
+        return self._do_list_files(path)
+
+    def open_file(self, file: PPPath, flags) -> File:
+        p = self._rel_path / file
+        return HostFile(os.open(self._find_parent(p, os.path.isfile) / p, flags | BINARY_MODE))
+
+    def get_file_stats(self, path: PPPath) -> dict:
+        p = self._rel_path / path
+        return dict(my_stat(os.lstat(self._find_parent(p, os.path.exists) / p)))
+
+class ContentDevice:
+    ROOT_STR = '!!!content!!!'
+    ROOT = PPPath(ROOT_STR)
+
+    def __init__(self, content_dirs: typing.List[PPPath]) -> None:
+        self.dirs = content_dirs
+
+    @functools.lru_cache(maxsize=2**15)
+    def isdir(self, path: PPPath) -> bool:
+        return any(os.path.isdir(str(path).replace(self.ROOT_STR, str(d))) for d in reversed(self.dirs))
+
+    @functools.lru_cache(maxsize=2**15)
+    def try_open_dir(self, path: PPPath) -> typing.Optional[ContentDirectory]:
+        for d in reversed(self.dirs):
+            if os.path.isdir(str(path).replace(self.ROOT_STR, str(d))):
+                return ContentDirectory(self.ROOT, path, self)
+        return None
+
+    def is_content_path(self, path: PPPath) -> bool:
+        return path.parts[0] == self.ROOT_STR
+
 class BotWContent(Operations):
-    def __init__(self, content_dir: str, work_dir: typing.Optional[str]) -> None:
-        self.content_dir = PPPath(content_dir)
+    def __init__(self, content_device: ContentDevice, work_dir: typing.Optional[str]) -> None:
+        self.content_device = content_device
         self.work_dir = PPPath(work_dir) if work_dir else None
         self.sarcs: typing.Dict[str, sarc.SARC] = dict()
         self.fd_map: FdAllocator[File] = FdAllocator()
@@ -229,11 +289,19 @@ class BotWContent(Operations):
     def _get_directory(self, base_path: PPPath, path: PPPath, assume_constant: bool) -> Directory:
         while True:
             full_path = base_path / path
-            if os.path.isdir(full_path):
-                return HostDirectory(base_path, full_path, assume_constant)
-            if is_archive_filename(full_path) and not os.path.isdir(full_path):
-                directory, archive = self._get_sarc(base_path, path, assume_constant)
-                return ArchiveDirectory(base_path, full_path, archive, directory)
+            if self.content_device.is_content_path(full_path):
+                content_dir = self.content_device.try_open_dir(full_path)
+                if content_dir:
+                    return content_dir
+                if is_archive_filename(full_path) and not self.content_device.isdir(full_path):
+                    directory, archive = self._get_sarc(base_path, path, assume_constant)
+                    return ArchiveDirectory(base_path, full_path, archive, directory)
+            else:
+                if os.path.isdir(full_path):
+                    return HostDirectory(base_path, full_path, assume_constant)
+                if is_archive_filename(full_path) and not os.path.isdir(full_path):
+                    directory, archive = self._get_sarc(base_path, path, assume_constant)
+                    return ArchiveDirectory(base_path, full_path, archive, directory)
             path = path.parent
 
     def _get_file(self, base_path: PPPath, path: PPPath, flags, assume_constant: bool) -> File:
@@ -242,11 +310,11 @@ class BotWContent(Operations):
 
     @functools.lru_cache(maxsize=256)
     def _get_directory_from_content(self, path: PPPath) -> Directory:
-        return self._get_directory(self.content_dir, path, True)
+        return self._get_directory(ContentDevice.ROOT, path, True)
 
     @functools.lru_cache(maxsize=256)
     def _get_file_from_content(self, path: PPPath, flags) -> File:
-        return self._get_file(self.content_dir, path, flags, True)
+        return self._get_file(ContentDevice.ROOT, path, flags, True)
 
     def _get_parent_directory_from_partial(self, path: PPPath) -> Directory:
         if self.work_dir and os.path.exists(self.work_dir / path):
@@ -306,7 +374,7 @@ class BotWContent(Operations):
 
     def statfs(self, partial: str):
         if os.name == 'nt':
-            usage = shutil.disk_usage(str(self.content_dir))
+            usage = shutil.disk_usage(str(self.content_device.dirs[0]))
             return {
                 # Just return everything in bytes.
                 'f_frsize': 1,
@@ -314,7 +382,7 @@ class BotWContent(Operations):
                 'f_bfree': usage.free,
             }
 
-        stv = os.statvfs(self.content_dir)
+        stv = os.statvfs(self.content_device.dirs[0])
         return dict((key, getattr(stv, key)) for key in ('f_bavail', 'f_bfree',
             'f_blocks', 'f_bsize', 'f_favail', 'f_ffree', 'f_files', 'f_flag',
             'f_frsize', 'f_namemax'))
@@ -390,35 +458,39 @@ def _exit_if_not_dir(path: str):
         sys.stderr.write('error: %s is not a directory\n' % path)
         sys.exit(1)
 
-def main(content_dir: str, target_dir: str, work_dir: typing.Optional[str]) -> None:
-    _exit_if_not_dir(content_dir)
+def main(content_dirs: typing.List[str], target_dir: str, work_dir: typing.Optional[str]) -> None:
+    for d in content_dirs:
+        _exit_if_not_dir(d)
     if work_dir:
         _exit_if_not_dir(work_dir)
 
-    content_dir = os.path.realpath(content_dir)
+    content_dirs = [os.path.realpath(d) for d in content_dirs]
     target_dir = os.path.realpath(target_dir)
 
-    print('content: %s' % content_dir)
+    for d in content_dirs:
+        print('content: %s' % d)
     print('target: %s' % target_dir)
     if work_dir:
         print('work: %s' % work_dir)
     else:
         print('work: (none, read-only)')
 
+    content_device = ContentDevice([PPPath(d) for d in content_dirs])
+
     if os.name != 'nt':
-        FUSE(BotWContent(content_dir, work_dir), target_dir, foreground=True)
+        FUSE(BotWContent(content_device, work_dir), target_dir, foreground=True)
     else:
-        FUSE(BotWContent(content_dir, work_dir), target_dir, foreground=True,
+        FUSE(BotWContent(content_device, work_dir), target_dir, foreground=True,
              uid=65792, gid=65792, umask=0)
 
 def cli_main() -> None:
     parser = argparse.ArgumentParser(description='Presents an extracted content view.')
-    parser.add_argument('content_dir', help='Path to the content directory.')
+    parser.add_argument('content_dirs', nargs='+', help='Path to the content directory.')
     parser.add_argument('target_mount_dir', help='Path to the directory on which the merged view should be mounted')
     parser.add_argument('-w', '--workdir', help='Path to the directory where modified/new files will be stored (in an extracted form). Assumed not to contain archives.')
 
     args = parser.parse_args()
-    main(content_dir=args.content_dir, target_dir=args.target_mount_dir, work_dir=args.workdir)
+    main(content_dirs=args.content_dirs, target_dir=args.target_mount_dir, work_dir=args.workdir)
 
 if __name__ == '__main__':
     cli_main()
