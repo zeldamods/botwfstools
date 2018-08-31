@@ -242,7 +242,7 @@ class ContentDirectory(Directory):
         return dict(my_stat(os.lstat(self._find_parent(p, os.path.exists) / p)))
 
     def get_file_stats(self, path):
-        return self._do_get_file_stats(path)
+        return dict(self._do_get_file_stats(path))
 
 class ContentDevice:
     ROOT_STR = '!!!content!!!'
