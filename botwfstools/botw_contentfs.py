@@ -109,11 +109,9 @@ def change_st_to_directory(st) -> None:
     st['st_size'] = 0
 
 class HostDirectory(Directory):
-    __slots__ = ('_assume_constant', '_stat_result')
-    def __init__(self, base_path: PPPath, path: PPPath, assume_constant: bool) -> None:
+    __slots__ = ()
+    def __init__(self, base_path: PPPath, path: PPPath) -> None:
         super().__init__(base_path, path)
-        self._assume_constant = assume_constant
-        self._stat_result: typing.Dict[PPPath, dict] = dict()
 
     def list_files(self, path: PPPath) -> typing.Collection[str]:
         return os.listdir(self._path / path)
@@ -122,12 +120,7 @@ class HostDirectory(Directory):
         return HostFile(os.open(self._path / file, flags | BINARY_MODE))
 
     def get_file_stats(self, path: PPPath) -> dict:
-        if self._assume_constant and path in self._stat_result:
-            return dict(self._stat_result[path])
-        result = my_stat(os.lstat(self._path / path))
-        if self._assume_constant:
-            self._stat_result[path] = result
-        return dict(result)
+        return my_stat(os.lstat(self._path / path))
 
 class ArchiveDirectory(Directory):
     __slots__ = ('_arc', '_parent')
@@ -243,9 +236,13 @@ class ContentDirectory(Directory):
         p = self._rel_path / file
         return HostFile(os.open(self._find_parent(p, os.path.isfile) / p, flags | BINARY_MODE))
 
-    def get_file_stats(self, path: PPPath) -> dict:
+    @functools.lru_cache(maxsize=2**13)
+    def _do_get_file_stats(self, path: PPPath) -> dict:
         p = self._rel_path / path
         return dict(my_stat(os.lstat(self._find_parent(p, os.path.exists) / p)))
+
+    def get_file_stats(self, path):
+        return self._do_get_file_stats(path)
 
 class ContentDevice:
     ROOT_STR = '!!!content!!!'
@@ -277,8 +274,8 @@ class BotWContent(Operations):
         self.fd_lock = threading.Lock()
 
     @functools.lru_cache(maxsize=64)
-    def _get_sarc(self, base_path: PPPath, path: PPPath, assume_constant: bool) -> typing.Tuple[Directory, sarc.SARC]:
-        parent = self._get_directory(base_path, path.parent, assume_constant)
+    def _get_sarc(self, base_path: PPPath, path: PPPath) -> typing.Tuple[Directory, sarc.SARC]:
+        parent = self._get_directory(base_path, path.parent)
         archive_file = parent.open_file(parent.get_path_relative_to_this(path), os.O_RDONLY)
         archive = sarc.read_file_and_make_sarc(
             io.BytesIO(archive_file.read(archive_file.get_size())))
@@ -286,7 +283,7 @@ class BotWContent(Operations):
             return (parent, archive)
         raise FuseOSError(errno.ENOENT)
 
-    def _get_directory(self, base_path: PPPath, path: PPPath, assume_constant: bool) -> Directory:
+    def _get_directory(self, base_path: PPPath, path: PPPath) -> Directory:
         while True:
             full_path = base_path / path
             if self.content_device.is_content_path(full_path):
@@ -294,36 +291,36 @@ class BotWContent(Operations):
                 if content_dir:
                     return content_dir
                 if is_archive_filename(full_path) and not self.content_device.isdir(full_path):
-                    directory, archive = self._get_sarc(base_path, path, assume_constant)
+                    directory, archive = self._get_sarc(base_path, path)
                     return ArchiveDirectory(base_path, full_path, archive, directory)
             else:
                 if os.path.isdir(full_path):
-                    return HostDirectory(base_path, full_path, assume_constant)
+                    return HostDirectory(base_path, full_path)
                 if is_archive_filename(full_path) and not os.path.isdir(full_path):
-                    directory, archive = self._get_sarc(base_path, path, assume_constant)
+                    directory, archive = self._get_sarc(base_path, path)
                     return ArchiveDirectory(base_path, full_path, archive, directory)
             path = path.parent
 
-    def _get_file(self, base_path: PPPath, path: PPPath, flags, assume_constant: bool) -> File:
-        parent = self._get_directory(base_path, path.parent, assume_constant)
+    def _get_file(self, base_path: PPPath, path: PPPath, flags) -> File:
+        parent = self._get_directory(base_path, path.parent)
         return parent.open_file(parent.get_path_relative_to_this(path), flags)
 
     @functools.lru_cache(maxsize=256)
     def _get_directory_from_content(self, path: PPPath) -> Directory:
-        return self._get_directory(ContentDevice.ROOT, path, True)
+        return self._get_directory(ContentDevice.ROOT, path)
 
     @functools.lru_cache(maxsize=256)
     def _get_file_from_content(self, path: PPPath, flags) -> File:
-        return self._get_file(ContentDevice.ROOT, path, flags, True)
+        return self._get_file(ContentDevice.ROOT, path, flags)
 
     def _get_parent_directory_from_partial(self, path: PPPath) -> Directory:
         if self.work_dir and os.path.exists(self.work_dir / path):
-            return self._get_directory(self.work_dir, path.parent, assume_constant=False)
+            return self._get_directory(self.work_dir, path.parent)
         return self._get_directory_from_content(path.parent)
 
     def _get_file_from_partial(self, path: PPPath, flags) -> File:
         if self.work_dir and os.path.isfile(self.work_dir / path):
-            return self._get_file(self.work_dir, path, flags, assume_constant=False)
+            return self._get_file(self.work_dir, path, flags)
         return self._get_file_from_content(path, flags)
 
     def _path(self, partial: str) -> PPPath:
