@@ -5,6 +5,7 @@ Tools for exploring and editing Breath of the Wild's ROM
 ## Requirements
 * Python 3.6+
 * [fusepy](https://github.com/fusepy/fusepy): download and install 3.0.0 **from GitHub**
+  * To do this, just run: `pip install https://github.com/fusepy/fusepy/archive/master.zip` (use `py -3 -m pip` rather than just `pip` if you're on Windows)
 * [WinFsp](http://www.secfs.net/winfsp/download/) if you're on Windows
 
 ## Quick usage
