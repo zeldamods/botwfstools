@@ -21,7 +21,7 @@ ARCHIVE_EXTS = {'sarc', 'pack', 'bactorpack', 'bmodelsh', 'beventpack', 'stera',
                 'ssarc', 'spack', 'sbactorpack', 'sbmodelsh', 'sbeventpack', 'sstera', 'sstats',
                 'blarc', 'sblarc', 'genvb', 'sgenvb'}
 AOC_PREFIX = 'Aoc/0010/'
-AOC_PREFIX_LIST = [
+AOC_PREFIX_LIST = (
     'Terrain/A/AocField',
     'UI/StaffRollDLC/',
     'Map/MainField/',
@@ -39,7 +39,7 @@ AOC_PREFIX_LIST = [
     'Pack/RemainsElectric.pack',
     'Pack/RemainsWater.pack',
     'Pack/RemainsFire.pack',
-    'Pack/FinalTrial.pack']
+    'Pack/FinalTrial.pack')
 AOC_VOICE_PATTERN = re.compile('^Voice/.*/Stream_Demo6.*/.*\.bfstm$')
 
 def _is_archive_filename(path: Path) -> bool:
@@ -198,21 +198,20 @@ def get_path(path: str, is_aoc: bool) -> str:
     else:
         new_path = path
 
-    if is_aoc:
-        for prefix in AOC_PREFIX_LIST:
-            if new_path.startswith(prefix):
-                return AOC_PREFIX + new_path
-        if AOC_VOICE_PATTERN.match(new_path):
-            return AOC_PREFIX + new_path
+    if not is_aoc:
+        return path
 
-        dungeon_num_str = re.search('Dungeon\((.+?)\)', new_path)
-        if dungeon_num_str:
-            dungeon_num = int(dungeon_num_str)
-            if dungeon_num > 119:
-                if new_path.startswith('Pack/') and new_path.endswith('.pack'):
-                    return AOC_PREFIX + new_path
-                if new_path.startswith(('Map/CDungeon/', 'Physics/StaticCompound/', 'NavMesh/CDungeon/')):
-                    return AOC_PREFIX + new_path
+    if new_path.startswith(AOC_PREFIX_LIST) or AOC_VOICE_PATTERN.match(new_path):
+        return AOC_PREFIX + new_path
+
+    dungeon_num_str = re.search('Dungeon\((.+?)\)', new_path)
+    if dungeon_num_str:
+        dungeon_num = int(dungeon_num_str)
+        if dungeon_num > 119:
+            if new_path.startswith('Pack/') and new_path.endswith('.pack'):
+                return AOC_PREFIX + new_path
+            if new_path.startswith(('Map/CDungeon/', 'Physics/StaticCompound/', 'NavMesh/CDungeon/')):
+                return AOC_PREFIX + new_path
 
     return path
 
