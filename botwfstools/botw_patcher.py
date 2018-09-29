@@ -204,10 +204,9 @@ def get_path(path: str, is_aoc: bool) -> str:
     if new_path.startswith(AOC_PREFIX_LIST) or AOC_VOICE_PATTERN.match(new_path):
         return AOC_PREFIX + new_path
 
-    dungeon_num_str = re.search('Dungeon\((.+?)\)', new_path)
-    if dungeon_num_str:
-        dungeon_num = int(dungeon_num_str)
-        if dungeon_num > 119:
+    num_match = re.search('Dungeon(\d\d\d)', new_path)
+    if num_match:
+        if int(num_match[1]) > 119:
             if new_path.startswith('Pack/') and new_path.endswith('.pack'):
                 return AOC_PREFIX + new_path
             if new_path.startswith(('Map/CDungeon/', 'Physics/StaticCompound/', 'NavMesh/CDungeon/')):
