@@ -103,23 +103,26 @@ def _find_sarc(path: Path) -> typing.Optional[sarc.SARC]:
             if not archive:
                 return None
         else:
-            with p.open('rb') as f:
-                archive = sarc.read_file_and_make_sarc(f) # type: ignore
-                archive_path = p
-                if not archive:
-                    return None
+            try:
+                with p.open('rb') as f:
+                    archive = sarc.read_file_and_make_sarc(f) # type: ignore
+                    archive_path = p
+                    if not archive:
+                        return None
+            except:
+                return None
 
     return archive
 
-def repack_archive(content_dir: Path, archive_path: Path, rel_archive_dir: Path) -> bool:
+def repack_archive(content_dir: Path, archive_path: Path, rel_archive_dir: Path, wiiu: bool) -> bool:
     temp_archive_dir = archive_path.with_name(archive_path.name + '.PATCHER_TEMP')
     os.rename(archive_path, temp_archive_dir)
 
     archive = _find_sarc(content_dir / rel_archive_dir)
-    if not archive:
-        return False
-
-    writer = sarc.make_writer_from_sarc(archive, lambda x: True)
+    if archive:
+        writer = sarc.make_writer_from_sarc(archive, lambda x: True)
+    else:
+        writer = sarc.SARCWriter(wiiu)
     if not writer:
         return False
 
@@ -241,7 +244,7 @@ def make_loadable_layer(content_dir: Path, patch_dir: Path, target_dir: Path, wi
             # Repack any extracted archive.
             if _is_dir(file) and _is_archive_filename(file):
                 sys.stderr.write(f'repacking {Fore.CYAN}%s{Style.RESET_ALL}...\n' % rel_path)
-                repack_archive(content_dir=content_dir, archive_path=file, rel_archive_dir=rel_path)
+                repack_archive(content_dir=content_dir, archive_path=file, rel_archive_dir=rel_path, wiiu=wiiu)
             if not file.is_file():
                 continue
 
