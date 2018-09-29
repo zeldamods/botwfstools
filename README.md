@@ -83,11 +83,15 @@ Converts an extracted content patch directory into a loadable content layer.
 This tool will repack any extracted archives and update the file sizes
 in the Resource Size Table automatically.
 
-    patcher  ORIGINAL_CONTENT_DIR   MOD_DIR  TARGET_DIR  --target {wiiu,switch}
+    patcher  ORIGINAL_CONTENT_DIR  MOD_DIR  TARGET_DIR  --target {wiiu,switch}
+             [--aoc_dir ORIGINAL_AOC_DIR  --aoc_patch_dir AOC_MOD_DIR  --aoc_target_dir AOC_TARGET_DIR]
 
-Usage example:
+Usage examples:
 
     patcher  botw/merged/  botw/mod-files/  botw/patched-files/
+	
+	patcher  botw/merged/  botw/mod/content/  botw/patched/content/  --target switch
+			 --aoc_dir botw/aoc/  --aoc_patch_dir botw/mod/aoc/  --aoc_target_dir botw/patched/aoc/
 
 The patched files can be used on console or with botw-overlayfs.
 

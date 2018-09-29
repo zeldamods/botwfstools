@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="botwfstools",
-    version="1.2.2-1",
+    version="1.3.0",
     author="leoetlino",
     author_email="leo@leolam.fr",
     description="Tools for exploring and editing Breath of the Wild's ROM",
