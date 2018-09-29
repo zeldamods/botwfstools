@@ -192,19 +192,19 @@ def _get_resource_path_for_rstb(rel_path: Path, is_aoc: bool) -> str:
 
 def get_path(path: str, is_aoc: bool) -> str:
     """Add aoc prefix to resource path if necessary"""
-    
+
     if path.startswith('001'):
         new_path = path[5:]
     else:
         new_path = path
-    
+
     if is_aoc:
         for prefix in AOC_PREFIX_LIST:
             if new_path.startswith(prefix):
                 return AOC_PREFIX + new_path
         if AOC_VOICE_PATTERN.match(new_path):
             return AOC_PREFIX + new_path
-        
+
         dungeon_num_str = re.search('Dungeon\((.+?)\)', new_path)
         if dungeon_num_str:
             dungeon_num = int(dungeon_num_str)
@@ -234,7 +234,7 @@ def make_loadable_layer(content_dir: Path, patch_dir: Path, target_dir: Path, wi
         for file_name in dirs:
             full_path = os.path.join(root, file_name)
             files_by_depth[full_path.count(os.path.sep)].append(Path(full_path))
-            
+
     size_calculator = rstb.SizeCalculator()
 
     for depth in sorted(files_by_depth.keys(), reverse=True):
@@ -275,9 +275,9 @@ def cli_main() -> None:
     parser.add_argument('--aoc_dir', type=Path, help='Path to the game add-on-content directory')
     parser.add_argument('--aoc_patch_dir', type=Path, help='Path to the extracted add-on-content patch directory')
     parser.add_argument('--aoc_target_dir', type=Path, help='Path to the target add-on-content directory')
-    
+
     args = parser.parse_args()
-    
+
     # These would always fail on Windows because of WinFsp.
     if os.name != 'nt':
         _fail_if_not_dir(args.content_dir)
@@ -289,18 +289,18 @@ def cli_main() -> None:
     if os.path.exists(args.target_dir) and len(os.listdir(args.target_dir)) != 0:
         sys.stderr.write('error: target dir is not empty. please remove all the files inside it\n')
         sys.exit(1)
-    
+
     wiiu = args.target == 'wiiu'
-    
+
     table = rstb.util.read_rstb(args.content_dir / _RSTB_PATH_IN_CONTENT, be=wiiu)
-       
+
     make_loadable_layer(args.content_dir, args.patch_dir, args.target_dir, wiiu, table, is_aoc=False)
     if args.aoc_dir or args.aoc_patch_dir or args.aoc_target_dir:
         if args.aoc_dir and args.aoc_patch_dir and args.aoc_target_dir:
-            make_loadable_layer(args.aoc_dir, args.aoc_patch_dir, args.aoc_target_dir, wiiu, table, is_aoc=True)    
+            make_loadable_layer(args.aoc_dir, args.aoc_patch_dir, args.aoc_target_dir, wiiu, table, is_aoc=True)
         else:
             sys.stderr.write('Not all aoc arguments were specified - ignoring aoc files\n')
-    
+
     sys.stderr.write('writing new RSTB...\n')
     table.set_size(_RSTB_PATH_IN_CONTENT.replace('.srsizetable', '.rsizetable'), table.get_buffer_size())
     final_rstb_path = args.target_dir / _RSTB_PATH_IN_CONTENT
