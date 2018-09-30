@@ -21,7 +21,7 @@ setuptools.setup(
     ],
     include_package_data=True,
     python_requires='>=3.6',
-    install_requires=['rstb~=1.0.1', 'sarc~=1.0.5', 'colorama~=0.3.9'],
+    install_requires=['rstb~=1.0', 'sarc~=1.0', 'colorama~=0.3.9'],
     entry_points = {
         'console_scripts': [
             'botw-contentfs = botwfstools.botw_contentfs:cli_main',
