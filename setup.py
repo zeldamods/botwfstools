@@ -1,12 +1,14 @@
 import fastentrypoints
 import setuptools
+import versioneer
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name="botwfstools",
-    version="1.4.0",
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     author="leoetlino",
     author_email="leo@leolam.fr",
     description="Tools for exploring and editing Breath of the Wild's ROM",
