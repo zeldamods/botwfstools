@@ -29,6 +29,8 @@ def is_archive_filename(path: PPPath) -> bool:
 
 class File(metaclass=abc.ABCMeta):
     __slots__ = ()
+    def close(self) -> None:
+        pass
     @abc.abstractclassmethod
     def read(self, length: int) -> bytes:
         pass
@@ -46,7 +48,7 @@ class HostFile(File):
     __slots__ = ('_fh')
     def __init__(self, fh) -> None:
         self._fh = fh
-    def __del__(self) -> None:
+    def close(self) -> None:
         os.close(self._fh)
     def read(self, count: int) -> bytes:
         return os.read(self._fh, count)
@@ -445,6 +447,8 @@ class BotWContent(Operations):
 
     def release(self, path, fd: int):
         with self.fd_lock:
+            file = self.fd_map.get_entry(fd)
+            file.close()
             self.fd_map.free(fd)
 
     def fsync(self, path, fdatasync, fd: int):
