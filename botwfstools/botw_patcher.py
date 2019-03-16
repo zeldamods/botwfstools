@@ -114,6 +114,9 @@ def _find_sarc(path: Path) -> typing.Optional[sarc.SARC]:
 
     return archive
 
+def is_gamedata_archive_file_name(file_name: str):
+    return file_name == 'gamedata.ssarc' or file_name == 'savedataformat.ssarc'
+
 def repack_archive(content_dir: Path, archive_path: Path, rel_archive_dir: Path, wiiu: bool) -> bool:
     temp_archive_dir = archive_path.with_name(archive_path.name + '.PATCHER_TEMP')
     os.rename(archive_path, temp_archive_dir)
@@ -131,7 +134,7 @@ def repack_archive(content_dir: Path, archive_path: Path, rel_archive_dir: Path,
             host_file_path = Path(os.path.join(root, file_name))
             path_in_archive = host_file_path.relative_to(temp_archive_dir).as_posix()
             # For some reason, Nintendo uses paths with leading slashes in these archives. Annoying.
-            if file_name == 'gamedata.ssarc' or file_name == 'savedataformat.ssarc':
+            if is_gamedata_archive_file_name(archive_path.name):
                 path_in_archive = '/' + path_in_archive
             with open(host_file_path, 'rb') as f:
                 writer.add_file(path_in_archive, f.read())
@@ -156,6 +159,8 @@ def _should_be_listed_in_rstb(resource_path: Path, rel_path: Path) -> bool:
     if str(resource_path) in _RSTB_BLACKLIST:
         return False
     for parent in rel_path.parents:
+        if is_gamedata_archive_file_name(parent.name):
+            return False
         if parent.suffix in _RSTB_BLACKLIST_ARCHIVE_EXT:
             return False
     return resource_path.suffix not in _RSTB_BLACKLIST_SUFFIXES
