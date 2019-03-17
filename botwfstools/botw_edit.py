@@ -64,7 +64,20 @@ def main(content_dir: typing.List[str], content_view: str, work_dir: str, patche
                 os.mkdir(temp_merged_dir)
             sys.exit(0)
 
+        def run_patcher():
+            sys.stderr.write('\n')
+            sys.stderr.write(f'{Style.DIM}--------------- Running patcher ---------------{Style.RESET_ALL}\n')
+            try:
+                subprocess.run([sys.executable, os.path.join(this_dir, 'botw_patcher.py'), temp_merged_dir,
+                               work_dir, patch_dir, '--force', '--target', target], check=True)
+            except subprocess.CalledProcessError:
+                sys.stderr.write(f'{Style.BRIGHT}{Fore.RED}Patcher exited with non-zero code{Style.RESET_ALL}\n')
+                signal_handler(None, None)
+            sys.stderr.write(f'{Style.BRIGHT}{Fore.GREEN}done.{Style.RESET_ALL}\n')
+            print_information()
+
         signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGUSR1, lambda sig, frame: run_patcher())
         sys.stderr.write('Ready.\n')
         def print_information():
             sys.stderr.write('\n')
@@ -82,17 +95,7 @@ def main(content_dir: typing.List[str], content_view: str, work_dir: str, patche
             cmd = input()
             if cmd != 'patch':
                 continue
-
-            sys.stderr.write('\n')
-            sys.stderr.write(f'{Style.DIM}--------------- Running patcher ---------------{Style.RESET_ALL}\n')
-            try:
-                subprocess.run([sys.executable, os.path.join(this_dir, 'botw_patcher.py'), temp_merged_dir,
-                               work_dir, patch_dir, '--force', '--target', target], check=True)
-            except subprocess.CalledProcessError:
-                sys.stderr.write(f'{Style.BRIGHT}{Fore.RED}Patcher exited with non-zero code{Style.RESET_ALL}\n')
-                signal_handler(None, None)
-            sys.stderr.write(f'{Style.BRIGHT}{Fore.GREEN}done.{Style.RESET_ALL}\n')
-            print_information()
+            run_patcher()
 
 def cli_main() -> None:
     colorama.init()
