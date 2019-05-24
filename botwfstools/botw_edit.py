@@ -77,7 +77,8 @@ def main(content_dir: typing.List[str], content_view: str, work_dir: str, patche
             print_information()
 
         signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGUSR1, lambda sig, frame: run_patcher())
+        if os.name != 'nt':
+            signal.signal(signal.SIGUSR1, lambda sig, frame: run_patcher())
         sys.stderr.write('Ready.\n')
         def print_information():
             sys.stderr.write('\n')
