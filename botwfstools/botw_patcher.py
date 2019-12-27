@@ -12,9 +12,9 @@ from pathlib import Path
 import rstb, rstb.util
 import sarc
 import shutil
+import syaz0
 import sys
 import typing
-import wszst_yaz0
 import re
 
 ARCHIVE_EXTS = {'sarc', 'pack', 'bactorpack', 'bmodelsh', 'beventpack', 'stera', 'stats',
@@ -70,7 +70,7 @@ def _is_dir(path: Path) -> bool:
 def _compress_file(path: Path) -> None:
     data = bytes()
     with open(path, 'rb') as f:
-        data = wszst_yaz0.compress(f.read())
+        data = syaz0.compress(f.read())
 
     compressed_path = path
     if not path.suffix.startswith('.s'):
